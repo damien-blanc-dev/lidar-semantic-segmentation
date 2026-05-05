@@ -41,3 +41,5 @@ wandb/
 outputs/checkpoints
 *.pth
 *.ply
+*.npy
+
