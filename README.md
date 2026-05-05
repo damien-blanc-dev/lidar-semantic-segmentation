@@ -31,15 +31,46 @@ Key challenges specific to outdoor LiDAR:
 
 ## Results
 
-Trained for **34 epochs** on a single RTX 3090 (~9 hours). Early stopping triggered at epoch 34 (best at epoch 19).
+### Comparison with published methods on Paris-Lille-3D
 
-| Model | mIoU | OA | Epochs | GPU |
-|-------|------|-----|--------|-----|
-| PointNet++ SSG (ours) | **64.42%** | **93.16%** | 34 | RTX 3090 |
-| PointNet++ (published) | ~63% | — | — | — |
-| KPConv (SOTA) | ~76% | — | — | — |
+| Method | mIoU | Input features | Reference |
+|--------|------|---------------|-----------|
+| PointNet (Qi et al., 2017) | ~47% | xyz | CVPR 2017 |
+| PointNet++ SSG (Qi et al., 2017) | ~63% | xyz + normals | NeurIPS 2017 |
+| SPGraph (Landrieu & Simonovsky, 2018) | ~73% | geometric features | CVPR 2018 |
+| KPConv rigid (Thomas et al., 2019) | ~75% | xyz + normals | ICCV 2019 |
+| RandLA-Net (Hu et al., 2020) | ~72% | xyz + intensity | CVPR 2020 |
+| **PointNet++ SSG (ours)** | **64.42%** | xyz + normals + reflectance | — |
 
-### Per-class IoU
+> Published numbers sourced from original papers and the [Paris-Lille-3D leaderboard](http://npm3d.fr/paris-lille-3d).  
+> Our implementation reaches parity with the published PointNet++ SSG baseline.
+
+### Ablation study — contribution of surface normals
+
+Trained for **34 epochs** (with normals) and **40 epochs** (without normals) on a single RTX 3090.
+
+| Variant | mIoU | OA | Key difference |
+|---------|------|-----|----------------|
+| PointNet++ SSG + normals (full model) | **64.42%** | **93.2%** | — |
+| PointNet++ SSG — no normals | 58.71% | 90.3% | -5.71% mIoU |
+
+**Normals contribute +5.71% mIoU overall**, with the largest impact on geometrically distinctive classes:
+
+| Class | With normals | Without normals | Δ |
+|-------|-------------|----------------|---|
+| bollard | 37.9% | 16.5% | **-21.4%** |
+| pedestrian | 54.6% | 40.6% | **-14.0%** |
+| trash can | 17.8% | 5.0% | **-12.8%** |
+| vegetation | 87.6% | 79.4% | -8.2% |
+| car | 94.5% | 86.9% | -7.6% |
+| pole/sign | 32.6% | **55.6%** | +23.0% ↑ |
+
+> The pole/sign anomaly (+23% *without* normals) is notable: cylindrical surfaces produce
+> noisy normal estimates, causing the full model to misclassify poles. Without normals,
+> the model falls back to the `height` feature which is highly discriminative for
+> thin vertical structures.
+
+### Per-class IoU (full model)
 
 | Class | IoU | Accuracy | Notes |
 |-------|-----|----------|-------|
@@ -50,7 +81,7 @@ Trained for **34 epochs** on a single RTX 3090 (~9 hours). Early stopping trigge
 | barrier | 56.0% | 73.3% | Confused with ground at edges |
 | pedestrian | 54.6% | 72.2% | Only 0.1% of points — weighted loss critical |
 | bollard | 37.9% | 64.6% | 0.0% of points — remarkable given scarcity |
-| pole/sign | 32.6% | 89.1% | Thin elongated objects, few points per instance |
+| pole/sign | 32.6% | 89.1% | Thin elongated objects, noisy normals |
 | trash can | 17.8% | 31.3% | Rarest class, hardest to segment |
 
 ---
