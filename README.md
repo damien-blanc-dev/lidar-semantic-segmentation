@@ -260,14 +260,7 @@ streamlit run app/demo.py
 
 ---
 
-## License
-
-MIT — see [LICENSE](LICENSE).
-
----
-
 ## Author
 
 **Damien Blanc** — PhD in AI for 3D Imaging  
-Specialization: volumetric segmentation (CT, microscopy) → transferring to outdoor LiDAR  
-[LinkedIn](https://linkedin.com/in/your-profile) · [GitHub](https://github.com/your-username)
+Specialization: volumetric segmentation (CT, microscopy) → transferring to outdoor LiDAR
