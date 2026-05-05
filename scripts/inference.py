@@ -249,6 +249,13 @@ def main():
         batch_size=args.batch_size,
     )
 
+    # ── Save predictions (for error analysis) ────────────────────────────
+    pred_dir = Path("outputs/predictions")
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    np.save(pred_dir / f"{args.scan}_pred.npy", pred_labels)
+    np.save(pred_dir / f"{args.scan}_gt.npy",   labels)
+    logger.info(f"Predictions saved → {pred_dir}/{args.scan}_pred.npy")
+
     # ── Metrics ───────────────────────────────────────────────────────────
     from src.training.metrics import MetricTracker
     tracker = MetricTracker(NUM_CLASSES, CLASS_NAMES, ignore_index=0)
