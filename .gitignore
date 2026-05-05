@@ -37,3 +37,7 @@ Thumbs.db
 
 # Weights & Biases
 wandb/
+
+outputs/checkpoints
+*.pth
+*.ply
