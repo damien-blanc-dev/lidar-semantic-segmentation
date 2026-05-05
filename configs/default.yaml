@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────
+#  LiDAR Semantic Segmentation – Default Config
+# ─────────────────────────────────────────────
+
+# Paths
+data:
+  # Absolute path to the Paris-Lille-3D dataset on this machine
+  dataset_dir: D:/Forge/Data/Benchmark/Benchmark
+  training_dir: D:/Forge/Data/Benchmark/Benchmark/training_10_classes
+  test_dir: D:/Forge/Data/Benchmark/Benchmark/test_10_classes
+  processed_dir: data/processed
+  train_files: [Lille1_1.ply, Lille1_2.ply, Lille2.ply]
+  val_files: [Paris.ply]
+  test_files: [ajaccio_2.ply, ajaccio_57.ply, dijon_9.ply]
+
+# Preprocessing
+preprocessing:
+  voxel_size: 0.05          # meters — voxel downsampling leaf size
+  normal_radius: 0.3        # meters — radius for normal estimation
+  normal_max_nn: 30         # max neighbors for normal estimation
+  block_size: 4.0           # meters — spatial block side length for cropping
+  block_stride: 2.0         # meters — sliding window stride
+  num_points: 4096          # fixed points per block (random sample if needed)
+
+# Labels (Paris-Lille-3D 10 coarse classes, already in the PLY files)
+labels:
+  num_classes: 10
+  names:
+    - unclassified      # 0
+    - ground            # 1
+    - building          # 2
+    - pole/sign         # 3
+    - bollard           # 4
+    - trash can         # 5
+    - barrier           # 6
+    - pedestrian        # 7
+    - car               # 8
+    - vegetation        # 9
+  # RGB colors for visualization
+  colors:
+    - [105, 105, 105]   # 0 unclassified
+    - [139, 115,  85]   # 1 ground
+    - [160, 160, 160]   # 2 building
+    - [255, 215,   0]   # 3 pole/sign
+    - [255, 165,   0]   # 4 bollard
+    - [210, 105,  30]   # 5 trash can
+    - [139,  69,  19]   # 6 barrier
+    - [255,  69,   0]   # 7 pedestrian
+    - [ 65, 105, 225]   # 8 car
+    - [ 34, 139,  34]   # 9 vegetation
+
+# Model
+model:
+  name: pointnet2_msg        # pointnet2_ssg | pointnet2_msg | randlanet
+  in_channels: 8             # x_norm, y_norm, z, height, reflectance, nx, ny, nz
+  dropout: 0.5
+
+# Training
+training:
+  epochs: 100
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  lr_scheduler: cosine       # cosine | step
+  lr_step_size: 20           # for step scheduler
+  lr_gamma: 0.5
+  early_stopping_patience: 15
+  seed: 42
+
+# Hardware
+hardware:
+  device: cuda               # cuda | cpu | mps
+  num_workers: 4
+  pin_memory: true
+
+# Outputs
+outputs:
+  checkpoint_dir: outputs/checkpoints
+  log_dir: outputs/logs
+  figure_dir: outputs/figures
+  experiment_name: pointnet2_msg_pl3d

@@ -1,0 +1,34 @@
+# Python 3.11+
+# Core
+numpy>=1.24
+scipy>=1.11
+
+# Point cloud I/O and processing
+open3d>=0.18.0
+plyfile>=1.0          # Robust PLY reader for custom scalar fields (class, reflectance)
+laspy>=2.5            # Read LAS/LAZ files
+lazrs>=0.5            # LAZ decompression backend for laspy
+
+# Deep learning
+torch>=2.1.0
+torchvision>=0.16
+torch-geometric>=2.4  # PointNet++ ops, sparse convolutions
+
+# Training utilities
+tensorboard>=2.14
+tqdm>=4.66
+omegaconf>=2.3        # YAML-based config management
+einops>=0.7           # Readable tensor operations
+
+# Visualization
+matplotlib>=3.7
+plotly>=5.17
+seaborn>=0.13
+
+# Demo
+streamlit>=1.28
+
+# Development
+pytest>=7.4
+black>=23.0
+isort>=5.12

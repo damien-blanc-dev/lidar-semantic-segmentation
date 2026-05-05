@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Data — do not commit raw scans (too large)
+data/raw/
+data/processed/
+
+# Outputs
+outputs/checkpoints/*.pth
+outputs/logs/
+# Keep figures for README screenshots
+!outputs/figures/.gitkeep
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Weights & Biases
+wandb/
