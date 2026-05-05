@@ -153,6 +153,79 @@ def _flush(feats, orig_idxs, model, device, vote_counts):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Plotly 3D viewer
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_plotly_3d(
+    xyz: np.ndarray,
+    labels: np.ndarray,
+    n_points: int = 40_000,
+) -> "go.Figure":
+    """Build an interactive Plotly 3D scatter, one trace per class.
+
+    One trace per class lets Plotly render a proper legend with toggle support
+    (click a class in the legend to hide/show it).
+    """
+    import plotly.graph_objects as go
+
+    # Subsample uniformly
+    n = len(xyz)
+    if n > n_points:
+        idx = np.random.choice(n, n_points, replace=False)
+        xyz    = xyz[idx]
+        labels = labels[idx]
+
+    # Center XY for nicer camera framing
+    xyz = xyz - xyz.mean(axis=0)
+
+    fig = go.Figure()
+    for cls_id, cls_name in enumerate(CLASS_NAMES):
+        if cls_id == 0:
+            continue   # skip unclassified
+        mask = labels == cls_id
+        if mask.sum() == 0:
+            continue
+
+        r, g, b = (CLASS_COLORS[cls_id] * 255).astype(int)
+        fig.add_trace(go.Scatter3d(
+            x=xyz[mask, 0],
+            y=xyz[mask, 1],
+            z=xyz[mask, 2],
+            mode="markers",
+            name=cls_name,
+            marker=dict(
+                size=1.5,
+                color=f"rgb({r},{g},{b})",
+                opacity=0.85,
+            ),
+            hovertemplate=f"<b>{cls_name}</b><br>x=%{{x:.1f}}  y=%{{y:.1f}}  z=%{{z:.1f}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(showbackground=False, color="white", title="X (m)"),
+            yaxis=dict(showbackground=False, color="white", title="Y (m)"),
+            zaxis=dict(showbackground=False, color="white", title="Z (m)"),
+            bgcolor="#0d0d1a",
+            camera=dict(eye=dict(x=0, y=-1.5, z=1.2)),
+        ),
+        paper_bgcolor="#0d0d1a",
+        plot_bgcolor="#0d0d1a",
+        font=dict(color="white"),
+        legend=dict(
+            bgcolor="#1a1a2e",
+            bordercolor="#444",
+            borderwidth=1,
+            font=dict(size=11),
+            itemsizing="constant",
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=600,
+    )
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  UI helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -218,6 +291,11 @@ def main():
         n_blocks   = st.slider("Blocks to infer (more = slower but denser)", 50, 500, 200, 50)
         show_gt    = st.checkbox("Show ground truth", value=True)
         col_mode   = st.radio("Color by", ["labels", "height", "reflectance"])
+
+        st.markdown("---")
+        st.subheader("3D viewer settings")
+        n_points_3d = st.slider("Points in 3D view", 10_000, 80_000, 40_000, 5_000)
+        show_3d     = st.checkbox("Show 3D viewer (after inference)", value=True)
 
         st.markdown("---")
         st.markdown(legend_html(), unsafe_allow_html=True)
@@ -317,6 +395,19 @@ def main():
         fig = plot_class_distribution(pc_dist, figsize=(10, 4))
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
+
+        # ── 3D interactive viewer ─────────────────────────────────────────
+        if show_3d:
+            st.markdown("---")
+            st.subheader("🌐 Interactive 3D viewer")
+            st.caption(f"Showing {n_points_3d:,} points — drag to rotate, scroll to zoom, double-click to reset")
+
+            fig3d = _build_plotly_3d(
+                xyz=points[visible, :3],
+                labels=pred_labels[visible],
+                n_points=n_points_3d,
+            )
+            st.plotly_chart(fig3d, use_container_width=True)
 
         # Download predictions
         st.markdown("---")
