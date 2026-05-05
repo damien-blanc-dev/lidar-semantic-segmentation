@@ -67,12 +67,14 @@ class PL3DDataset(Dataset):
         block_size: float = 4.0,
         min_points: int = 512,
         augment: bool = False,
+        use_normals: bool = True,
     ):
         self.processed_dir = Path(processed_dir)
         self.num_points = num_points
         self.block_size = block_size
         self.min_points = min_points
         self.augment = augment
+        self.use_normals = use_normals
 
         # Load all scans into memory (downsampled, so ~100-300 MB per scan)
         self.scans = []
@@ -176,17 +178,11 @@ class PL3DDataset(Dataset):
         x_norm = ((xyz[:, 0] - center_xy[0]) / half).astype(np.float32)
         y_norm = ((xyz[:, 1] - center_xy[1]) / half).astype(np.float32)
 
-        # Assemble final feature vector (P, 8)
-        features = np.stack([
-            x_norm,          # 0: local X
-            y_norm,          # 1: local Y
-            xyz[:, 2],       # 2: raw Z
-            height,          # 3: height above local ground
-            refl,            # 4: reflectance
-            norms[:, 0],     # 5: nx
-            norms[:, 1],     # 6: ny
-            norms[:, 2],     # 7: nz
-        ], axis=1).astype(np.float32)   # (P, 8)
+        # Assemble final feature vector — (P, 8) with normals, (P, 5) without
+        channels = [x_norm, y_norm, xyz[:, 2], height, refl]
+        if self.use_normals:
+            channels += [norms[:, 0], norms[:, 1], norms[:, 2]]
+        features = np.stack(channels, axis=1).astype(np.float32)
 
         # ── Augmentation (training only) ──────────────────────────────────
         if self.augment:
@@ -219,7 +215,7 @@ def _augment(features: np.ndarray) -> np.ndarray:
     """
     features = features.copy()
 
-    # Z-axis rotation (applies to x_norm, y_norm and normals nx, ny)
+    # Z-axis rotation (applies to x_norm, y_norm and normals nx, ny if present)
     theta = np.random.uniform(0, 2 * np.pi)
     cos_t, sin_t = np.cos(theta), np.sin(theta)
 
@@ -227,9 +223,10 @@ def _augment(features: np.ndarray) -> np.ndarray:
     features[:, 0] = cos_t * x - sin_t * y
     features[:, 1] = sin_t * x + cos_t * y
 
-    nx, ny = features[:, 5].copy(), features[:, 6].copy()
-    features[:, 5] = cos_t * nx - sin_t * ny
-    features[:, 6] = sin_t * nx + cos_t * ny
+    if features.shape[1] >= 7:   # normals present (columns 5, 6)
+        nx, ny = features[:, 5].copy(), features[:, 6].copy()
+        features[:, 5] = cos_t * nx - sin_t * ny
+        features[:, 6] = sin_t * nx + cos_t * ny
 
     # XYZ jitter
     features[:, 0:3] += np.random.normal(0, 0.01, size=(len(features), 3)).astype(np.float32)
