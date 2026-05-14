@@ -118,6 +118,7 @@ def main():
     logger.info(f"Model parameters: {n_params:,}")
 
     # ── Train ─────────────────────────────────────────────────────────────
+    loss_type = "weighted_ce" if use_weighted_loss else "ce"
     cfg = {
         "device": device,
         "epochs": args.epochs,
@@ -129,6 +130,8 @@ def main():
         "experiment_name": exp_name,
         "checkpoint_dir": "outputs/checkpoints",
         "log_dir": "outputs/logs",
+        "model": "pointnet2",
+        "loss":  loss_type,
     }
 
     trainer = Trainer(
@@ -142,6 +145,29 @@ def main():
     trainer.fit()
 
     logger.info(f"Best mIoU ({args.variant}): {trainer.best_miou*100:.2f}%")
+
+    from src.utils.results_logger import log_result
+    _m   = trainer.best_metrics
+    _cls = _m.get("per_class_iou", {})
+    log_result({
+        "experiment":      exp_name,
+        "variant":         args.variant,
+        "model":           "pointnet2",
+        "blocksize":       4.0,
+        "numpoints":       4096,
+        "loss":            loss_type,
+        "normal_radius":   0.0 if args.variant == "no_normals" else 0.3,
+        "mIoU":            round(_m.get("miou", float("nan")) * 100, 2),
+        "OA":              round(_m.get("overall_acc", float("nan")) * 100, 2),
+        "pedestrian_iou":  round(_cls.get("pedestrian", float("nan")) * 100, 2),
+        "bollard_iou":     round(_cls.get("bollard", float("nan")) * 100, 2),
+        "polesign_iou":    round(_cls.get("pole/sign", float("nan")) * 100, 2),
+        "trashcan_iou":    round(_cls.get("trash can", float("nan")) * 100, 2),
+        "params":          n_params,
+        "train_time_s":    round(trainer.fit_time_s, 1),
+        "inference_time_s": "",
+    })
+    logger.info("Result logged → outputs/results.csv")
 
 
 if __name__ == "__main__":

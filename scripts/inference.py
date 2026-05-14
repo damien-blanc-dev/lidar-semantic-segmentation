@@ -8,13 +8,16 @@ and merges predictions by majority vote (a point can fall in multiple blocks).
 
 Usage:
     python scripts/inference.py --scan Paris
-    python scripts/inference.py --scan Lille1_1 --checkpoint outputs/checkpoints/pointnet2_ssg_pl3d/best.pth
-    python scripts/inference.py --scan Paris --save_ply          # export colored PLY
+    python scripts/inference.py --scan Paris --save_probs           # also save softmax probs for Exp 5
+    python scripts/inference.py --scan Paris --model randlanet \\
+        --checkpoint outputs/checkpoints/exp4_randlanet/best.pth
+    python scripts/inference.py --scan Paris --save_ply             # export colored PLY
 """
 
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -28,24 +31,30 @@ logger = logging.getLogger(__name__)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 PROCESSED_DIR = Path("data/processed")
-CHECKPOINT    = Path("outputs/checkpoints/pointnet2_ssg_pl3d/best.pth")
+CHECKPOINT    = Path("outputs/checkpoints/pointnet2_pl3d/best.pth")
 FIGURE_DIR    = Path("outputs/figures")
+MODELS        = ["pointnet2", "randlanet", "point_transformer"]
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="PointNet++ inference on Paris-Lille-3D")
-    p.add_argument("--scan",       type=str, default="Paris",
-                   help="Scan stem to run inference on (default: Paris)")
-    p.add_argument("--checkpoint", type=str, default=str(CHECKPOINT))
+    p = argparse.ArgumentParser(description="Inference on Paris-Lille-3D")
+    p.add_argument("--scan",        type=str, default="Paris")
+    p.add_argument("--checkpoint",  type=str, default=str(CHECKPOINT))
     p.add_argument("--processed_dir", type=str, default=str(PROCESSED_DIR))
-    p.add_argument("--block_size", type=float, default=4.0)
-    p.add_argument("--num_points", type=int,   default=4096)
-    p.add_argument("--batch_size", type=int,   default=32)
-    p.add_argument("--stride",     type=float, default=2.0,
+    p.add_argument("--block_size",  type=float, default=4.0)
+    p.add_argument("--num_points",  type=int,   default=4096)
+    p.add_argument("--batch_size",  type=int,   default=32)
+    p.add_argument("--stride",      type=float, default=2.0,
                    help="Sliding window stride in meters (default: 2.0)")
-    p.add_argument("--save_ply",   action="store_true",
+    p.add_argument("--model",       type=str,   default="pointnet2", choices=MODELS,
+                   help="Architecture — auto-detected from checkpoint when possible")
+    p.add_argument("--save_ply",    action="store_true",
                    help="Export a colored PLY file for CloudCompare")
-    p.add_argument("--device",     type=str, default="auto")
+    p.add_argument("--save_probs",  action="store_true",
+                   help="Save per-point softmax probabilities to *_probs.npy (Exp 5)")
+    p.add_argument("--experiment",  type=str, default=None,
+                   help="Experiment name to log inference_time_s into results.csv")
+    p.add_argument("--device",      type=str, default="auto")
     return p.parse_args()
 
 
@@ -62,56 +71,56 @@ def run_inference(
     stride: float = 2.0,
     num_points: int = 4096,
     batch_size: int = 32,
-) -> "np.ndarray":
+    save_probs: bool = False,
+) -> "np.ndarray | tuple[np.ndarray, np.ndarray]":
     """Sliding-window inference → per-point predicted labels (N,).
 
     Each point accumulates votes from all blocks it falls into.
     Final prediction = class with the most votes.
 
-    This is the LiDAR equivalent of sliding-window inference on CT volumes.
+    When save_probs=True, also returns averaged softmax probabilities (N, C).
+    Softmax probs are averaged (not voted) across overlapping windows, which
+    gives a calibrated confidence signal for uncertainty analysis (Exp 5).
     """
     import numpy as np
     import torch
 
     N = len(points)
-    xyz    = points[:, :3]          # x, y, z
-    xy     = points[:, :2]          # x, y  (for block lookup)
-    half   = block_size / 2.0
+    xy   = points[:, :2]
+    half = block_size / 2.0
 
-    # Build grid of block centers covering the full scan XY extent
     x_min, y_min = xy.min(axis=0)
     x_max, y_max = xy.max(axis=0)
-
     centers_x = np.arange(x_min + half, x_max, stride)
     centers_y = np.arange(y_min + half, y_max, stride)
     grid = [(cx, cy) for cx in centers_x for cy in centers_y]
     logger.info(f"  {len(grid):,} blocks to process (stride={stride}m)")
 
-    from src.data.dataset import _augment
     from src.data.loader import NUM_CLASSES
 
-    # Accumulators
     vote_counts  = np.zeros((N, NUM_CLASSES), dtype=np.int32)
+    prob_accum   = np.zeros((N, NUM_CLASSES), dtype=np.float32) if save_probs else None
+    visit_counts = np.zeros(N, dtype=np.int32)                  if save_probs else None
 
-    # Collect blocks into batches
-    batch_feats  = []
-    batch_masks  = []
+    batch_feats: list = []
+    batch_masks: list = []
 
     def flush_batch():
-        """Run model on accumulated batch, update vote_counts."""
         if not batch_feats:
             return
-        feat_tensor = torch.from_numpy(
-            np.stack(batch_feats, axis=0)
-        ).to(device)                                    # (B, num_points, 8)
+        feat_tensor = torch.from_numpy(np.stack(batch_feats, axis=0)).to(device)
 
         with torch.no_grad():
-            logits = model(feat_tensor)                 # (B, num_points, C)
-            preds  = logits.argmax(dim=-1).cpu().numpy()  # (B, num_points)
+            logits = model(feat_tensor)                              # (B, P, C)
+            preds  = logits.argmax(dim=-1).cpu().numpy()            # (B, P)
+            if save_probs:
+                probs_batch = torch.softmax(logits, dim=-1).cpu().numpy()  # (B, P, C)
 
-        for pred, mask_idx in zip(preds, batch_masks):
-            # pred shape: (num_points,) — indices back into the full scan
+        for i, (pred, mask_idx) in enumerate(zip(preds, batch_masks)):
             np.add.at(vote_counts, (mask_idx,), np.eye(NUM_CLASSES, dtype=np.int32)[pred])
+            if save_probs:
+                np.add.at(prob_accum, (mask_idx,), probs_batch[i])
+                np.add.at(visit_counts, mask_idx, 1)
 
         batch_feats.clear()
         batch_masks.clear()
@@ -127,19 +136,18 @@ def run_inference(
         block_pts = points[mask]
         m = mask.sum()
 
-        if m < 64:   # skip nearly-empty blocks
+        if m < 64:
             continue
 
-        # Sample / pad to num_points
         if m >= num_points:
             chosen = np.random.choice(m, num_points, replace=False)
         else:
             chosen = np.random.choice(m, num_points, replace=True)
 
-        block = block_pts[chosen]                       # (num_points, 7)
-        orig_idx = np.where(mask)[0][chosen]            # original point indices
+        block     = block_pts[chosen]
+        orig_idx  = np.where(mask)[0][chosen]
 
-        # Feature engineering (same as Dataset)
+        # Feature engineering (mirrors PL3DDataset.__getitem__)
         z_ground = np.percentile(block[:, 2], 5)
         height   = (block[:, 2] - z_ground).clip(min=0).astype(np.float32)
         x_norm   = ((block[:, 0] - cx) / half).astype(np.float32)
@@ -149,7 +157,7 @@ def run_inference(
             x_norm, y_norm, block[:, 2],
             height, block[:, 3],
             block[:, 4], block[:, 5], block[:, 6],
-        ], axis=1).astype(np.float32)                   # (num_points, 8)
+        ], axis=1).astype(np.float32)
 
         batch_feats.append(feat)
         batch_masks.append(orig_idx)
@@ -161,14 +169,17 @@ def run_inference(
         if processed % 500 == 0:
             logger.info(f"  {processed}/{len(grid)} blocks done ...")
 
-    flush_batch()  # remaining blocks
+    flush_batch()
 
-    # Final prediction = argmax of vote counts
     pred_labels = vote_counts.argmax(axis=1).astype(np.int32)
-
-    # Points with no votes (not covered by any block) → unclassified = 0
-    no_vote = vote_counts.sum(axis=1) == 0
+    no_vote     = vote_counts.sum(axis=1) == 0
     pred_labels[no_vote] = 0
+
+    if save_probs:
+        safe = np.maximum(visit_counts, 1).astype(np.float32)[:, np.newaxis]
+        avg_probs = prob_accum / safe
+        avg_probs[no_vote] = 0.0
+        return pred_labels, avg_probs
 
     return pred_labels
 
@@ -177,28 +188,20 @@ def run_inference(
 #  Export helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def export_colored_ply(
-    xyz: "np.ndarray",
-    labels: "np.ndarray",
-    save_path: Path,
-) -> None:
-    """Write a colored PLY file viewable in CloudCompare."""
+def export_colored_ply(xyz: "np.ndarray", labels: "np.ndarray", save_path: Path) -> None:
     import numpy as np
     from src.data.loader import CLASS_COLORS
 
     colors_uint8 = (CLASS_COLORS[labels] * 255).astype(np.uint8)
-
     with open(save_path, "w") as f:
         f.write("ply\nformat ascii 1.0\n")
         f.write(f"element vertex {len(xyz)}\n")
         f.write("property float x\nproperty float y\nproperty float z\n")
         f.write("property uchar red\nproperty uchar green\nproperty uchar blue\n")
         f.write("end_header\n")
-
     with open(save_path, "ab") as f:
         data = np.hstack([xyz, colors_uint8]).astype(object)
         np.savetxt(f, data, fmt=["%f", "%f", "%f", "%d", "%d", "%d"])
-
     logger.info(f"  Colored PLY saved → {save_path}")
 
 
@@ -223,13 +226,32 @@ def main():
         logger.error(f"Checkpoint not found: {ckpt_path}")
         sys.exit(1)
 
-    ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     logger.info(f"Loaded checkpoint — epoch {ckpt['epoch']}, mIoU {ckpt['miou']*100:.2f}%")
 
-    from src.models.pointnet2 import PointNet2
+    # ── Model selection ───────────────────────────────────────────────────
+    # Prefer architecture recorded in the checkpoint cfg; fall back to --model
+    model_name = args.model
+    if "cfg" in ckpt and "model" in ckpt["cfg"]:
+        model_name = ckpt["cfg"]["model"]
+        logger.info(f"  Architecture (from checkpoint): {model_name}")
+
     from src.data.loader import CLASS_NAMES, NUM_CLASSES
 
-    model = PointNet2(in_channels=8, num_classes=NUM_CLASSES, dropout=0.0)
+    if model_name == "pointnet2":
+        from src.models.pointnet2 import PointNet2
+        model = PointNet2(in_channels=8, num_classes=NUM_CLASSES, dropout=0.0)
+    elif model_name == "randlanet":
+        from src.models.randlanet import RandLANet
+        model = RandLANet(in_channels=8, num_classes=NUM_CLASSES, dropout=0.0)
+    elif model_name == "point_transformer":
+        from src.models.point_transformer import PointTransformer
+        model = PointTransformer(in_channels=8, num_classes=NUM_CLASSES, dropout=0.0)
+    else:
+        logger.warning(f"Unknown model '{model_name}', defaulting to PointNet2")
+        from src.models.pointnet2 import PointNet2
+        model = PointNet2(in_channels=8, num_classes=NUM_CLASSES, dropout=0.0)
+
     model.load_state_dict(ckpt["model_state_dict"])
     model = model.to(device)
 
@@ -241,20 +263,33 @@ def main():
 
     # ── Inference ─────────────────────────────────────────────────────────
     logger.info("Running sliding-window inference ...")
-    pred_labels = run_inference(
+    t_inf = time.time()
+    result = run_inference(
         points, labels, model, device,
         block_size=args.block_size,
         stride=args.stride,
         num_points=args.num_points,
         batch_size=args.batch_size,
+        save_probs=args.save_probs,
     )
+    inference_time_s = time.time() - t_inf
+    logger.info(f"  Inference done in {inference_time_s:.0f}s")
 
-    # ── Save predictions (for error analysis) ────────────────────────────
+    if args.save_probs:
+        pred_labels, probs = result
+    else:
+        pred_labels = result
+
+    # ── Save predictions ──────────────────────────────────────────────────
     pred_dir = Path("outputs/predictions")
     pred_dir.mkdir(parents=True, exist_ok=True)
     np.save(pred_dir / f"{args.scan}_pred.npy", pred_labels)
     np.save(pred_dir / f"{args.scan}_gt.npy",   labels)
     logger.info(f"Predictions saved → {pred_dir}/{args.scan}_pred.npy")
+
+    if args.save_probs:
+        np.save(pred_dir / f"{args.scan}_probs.npy", probs)
+        logger.info(f"Softmax probs saved → {pred_dir}/{args.scan}_probs.npy  shape={probs.shape}")
 
     # ── Metrics ───────────────────────────────────────────────────────────
     from src.training.metrics import MetricTracker
@@ -264,24 +299,33 @@ def main():
     logger.info("Results on full scan:")
     logger.info(tracker.log_str(metrics))
 
+    # ── Log inference time into results.csv (optional) ───────────────────
+    if args.experiment:
+        from src.utils.results_logger import log_result
+        log_result({
+            "experiment":       args.experiment,
+            "variant":          "inference",
+            "model":            model_name,
+            "mIoU":             round(metrics["miou"] * 100, 2),
+            "OA":               round(metrics["overall_acc"] * 100, 2),
+            "inference_time_s": round(inference_time_s, 1),
+        })
+        logger.info("Inference result logged → outputs/results.csv")
+
     # ── Figures ───────────────────────────────────────────────────────────
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
     xyz = points[:, :3]
 
     from src.visualization.visualizer import plot_topdown, plot_class_distribution
-
-    # Subsample for plotting (12M points is too many for matplotlib)
-    n_plot = min(500_000, len(xyz))
-    idx_plot = np.random.choice(len(xyz), n_plot, replace=False)
-
-    # Build fake PointCloud objects for the visualizer
     from src.data.loader import PointCloud
 
-    pc_gt   = PointCloud(xyz=xyz[idx_plot], labels=labels[idx_plot])
-    pc_pred = PointCloud(xyz=xyz[idx_plot], labels=pred_labels[idx_plot])
+    n_plot  = min(500_000, len(xyz))
+    idx_plt = np.random.choice(len(xyz), n_plot, replace=False)
+
+    pc_gt   = PointCloud(xyz=xyz[idx_plt], labels=labels[idx_plt])
+    pc_pred = PointCloud(xyz=xyz[idx_plt], labels=pred_labels[idx_plt])
 
     logger.info("Generating figures ...")
-
     plot_topdown(pc_gt,   mode="labels", subsample=n_plot,
                  save_path=FIGURE_DIR / f"{args.scan}_gt.png")
     plot_topdown(pc_pred, mode="labels", subsample=n_plot,
@@ -291,13 +335,9 @@ def main():
 
     logger.info(f"Figures saved to {FIGURE_DIR}/")
 
-    # ── Optional PLY export ───────────────────────────────────────────────
     if args.save_ply:
-        logger.info("Exporting colored PLY (this may take a few minutes for large scans) ...")
-        export_colored_ply(
-            xyz, pred_labels,
-            FIGURE_DIR / f"{args.scan}_predictions.ply",
-        )
+        logger.info("Exporting colored PLY ...")
+        export_colored_ply(xyz, pred_labels, FIGURE_DIR / f"{args.scan}_predictions.ply")
 
     logger.info("Done.")
 
