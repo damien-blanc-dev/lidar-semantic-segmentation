@@ -21,6 +21,8 @@ data/processed*/
 # Outputs
 outputs/checkpoints/*.pth
 outputs/logs/
+outputs/fusion/
+
 # Keep figures for README screenshots
 !outputs/figures/.gitkeep
 
