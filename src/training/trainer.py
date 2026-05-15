@@ -407,6 +407,8 @@ class Trainer:
                 self.criterion, self.device, epoch, self.writer,
             )
 
+            torch.cuda.empty_cache()
+
             # Validate
             val_loss, metrics = validate(
                 self.model, self.val_loader, self.criterion,
@@ -466,7 +468,16 @@ class Trainer:
                 "cfg": self.cfg,
             }, tmp_path)
             tmp_path.replace(path)
+            logger.info(f"  Checkpoint saved -> {path}")
         except (RuntimeError, OSError) as e:
             logger.error(f"  Checkpoint save failed ({e}). Skipping — training continues.")
-            if tmp_path.exists():
-                tmp_path.unlink(missing_ok=True)
+            # On Windows, torch.save's C++ zip writer may keep the file handle open
+            # for a brief moment after an exception, causing PermissionError on unlink.
+            # Retry a few times before giving up — orphaned .tmp files are harmless.
+            for _attempt in range(4):
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink(missing_ok=True)
+                    break
+                except PermissionError:
+                    time.sleep(0.3)
