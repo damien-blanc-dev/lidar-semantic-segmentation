@@ -48,17 +48,17 @@ All experiments use PointNet++ SSG with 972,714 parameters, 4096 points per bloc
 
 | Experiment | Loss | Normal radius | mIoU | OA | Pedestrian | Bollard | Pole/sign | Trash can |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| **exp2_weighted_ce** | weighted_ce | 0.3 | **69.51** | **96.49** | 54.73 | 32.31 | 60.10 | 22.87 |
-| exp1_r020 | weighted_ce | 0.2 | 69.13 | 95.11 | 49.63 | **41.96** | 58.34 | **28.12** |
-| exp2_ce | ce | 0.3 | 68.31 | 96.14 | 54.46 | 33.49 | 58.55 | 24.08 |
-| exp1_r050 | weighted_ce | 0.5 | 68.53 | 95.65 | 49.06 | 35.94 | 57.16 | 25.29 |
-| exp3_b2_n2048 | weighted_ce | 0.3 | 67.09 | 94.79 | 54.34 | 35.03 | **66.68** | 9.94 |
-| exp1_r030 | weighted_ce | 0.3 | 63.35 | 93.75 | 53.12 | 31.91 | 44.88 | 13.41 |
 | exp1_r010 | weighted_ce | 0.1 | 59.28 | 90.69 | 48.97 | 19.21 | 46.94 | 16.96 |
-| exp2_cb_focal_v2 | cb_focal | 0.3 | 57.07 | 89.11 | 41.44 | 37.53 | 35.91 | 7.45 |
-| exp2_focal_v2 | focal | 0.3 | 50.10 | 83.22 | 43.39 | 27.63 | 23.09 | 4.53 |
+| exp1_r020 | weighted_ce | 0.2 | 69.13 | 95.11 | 49.63 | **41.96** | 58.34 | **28.12** |
+| exp1_r030 | weighted_ce | 0.3 | 63.35 | 93.75 | 53.12 | 31.91 | 44.88 | 13.41 |
+| exp1_r050 | weighted_ce | 0.5 | 68.53 | 95.65 | 49.06 | 35.94 | 57.16 | 25.29 |
+| exp2_ce | ce | 0.3 | 68.31 | 96.14 | 54.46 | 33.49 | 58.55 | 24.08 |
+| **exp2_weighted_ce** | weighted_ce | 0.3 | **69.51** | **96.49** | 54.73 | 32.31 | 60.10 | 22.87 |
 | exp2_focal | focal | 0.3 | 1.42 | 0.74 | 9.02 | 2.69 | 0.39 | 0.66 |
+| exp2_focal_v2 | focal | 0.3 | 50.10 | 83.22 | 43.39 | 27.63 | 23.09 | 4.53 |
 | exp2_cb_focal | cb_focal | 0.3 | 2.49 | 0.69 | 7.75 | 14.01 | 0.54 | 0.09 |
+| exp2_cb_focal_v2 | cb_focal | 0.3 | 57.07 | 89.11 | 41.44 | 37.53 | 35.91 | 7.45 |
+| exp3_b2_n2048 | weighted_ce | 0.3 | 67.09 | 94.79 | 54.34 | 35.03 | **66.68** | 9.94 |
 
 > **Best overall:** `exp2_weighted_ce` — 69.51% mIoU, 96.49% OA.  
 > `exp1_r020` is competitive at 69.13% mIoU and achieves the highest bollard IoU (41.96%) and trash can IoU (28.12%), suggesting that a tighter normal radius better captures thin and small objects.
@@ -71,10 +71,10 @@ All experiments use PointNet++ SSG with 972,714 parameters, 4096 points per bloc
 |---|---:|---:|---|
 | weighted_ce | **69.51** | **96.49** | Best overall, stable training |
 | ce | 68.31 | 96.14 | Only −1.2% mIoU vs weighted, but weaker on rare classes |
-| cb_focal_v2 | 57.07 | 89.11 | Second attempt improves, but still −12% mIoU |
+| focal | 1.42 | 0.74 | Complete collapse — learning failure |
 | focal_v2 | 50.10 | 83.22 | Unstable, strong degradation on rare classes |
 | cb_focal | 2.49 | 0.69 | Complete collapse — learning failure |
-| focal | 1.42 | 0.74 | Complete collapse — learning failure |
+| cb_focal_v2 | 57.07 | 89.11 | Second attempt improves, but still −12% mIoU |
 
 `weighted_ce` is the most robust loss for this imbalanced setup. Both focal variants fully collapsed on the first attempt and recovered partially after tuning (`_v2`), but remain significantly below `weighted_ce`. The high OA paired with near-zero mIoU in collapsed runs confirms the model predicted only dominant classes (ground, building).
 
