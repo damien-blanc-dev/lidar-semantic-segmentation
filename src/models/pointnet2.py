@@ -175,7 +175,7 @@ def knn_interpolate(
 
     k = min(k, N_coarse)
 
-    dists = torch.cdist(xyz_fine, xyz_coarse)           # (B, N_fine, N_coarse)
+    dists = torch.cdist(xyz_fine.contiguous(), xyz_coarse.contiguous())  # (B, N_fine, N_coarse)
     knn_dists, knn_idx = dists.topk(k, dim=-1, largest=False)  # (B, N_fine, k)
 
     # Inverse distance weights (add small eps for stability)
