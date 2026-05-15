@@ -14,8 +14,9 @@ venv/
 env/
 
 # Data — do not commit raw scans (too large)
+data/
 data/raw/
-data/processed/
+data/processed*/
 
 # Outputs
 outputs/checkpoints/*.pth
@@ -31,6 +32,11 @@ outputs/logs/
 .idea/
 *.swp
 
+# Claude
+.claude
+CLAUDE.md
+AGENTS.md
+
 # OS
 .DS_Store
 Thumbs.db
@@ -42,4 +48,11 @@ outputs/checkpoints
 *.pth
 *.ply
 *.npy
+
+# Outputs
+outputs/predictions/
+outputs/logs/
+outputs/*.png
+outputs/*.csv
+outputs/*.ply
 
