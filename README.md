@@ -26,7 +26,7 @@ A key difficulty is severe class imbalance. Ground and building dominate the dat
 
 ### Preprocessing
 
-The preprocessing pipeline converts raw annotated PLY files into reusable NumPy tensors through voxel downsampling at 0.05 m, normal estimation, and feature assembly. Each point is represented by 8 input channels: normalized x and y within the block, absolute z, height above local ground, reflectance, and the three components of the local surface normal.
+The preprocessing pipeline converts raw annotated PLY files into reusable NumPy tensors through voxel downsampling at 0.05 m, normal estimation, and feature assembly. Each point is represented by 8 input channels: normalized x and y within the block, block-local normalized z (height above local ground divided by half-block size), height above local ground in meters, reflectance, and the three components of the local surface normal. All three geometry channels share the same unit scale, which ensures unbiased KNN neighborhoods in architectures such as RandLA-Net and PointTransformer.
 
 ### Model
 
@@ -34,7 +34,7 @@ The main baseline is a PointNet++ SSG encoder-decoder with set abstraction and f
 
 ### Training
 
-Training uses weighted cross-entropy to address extreme class imbalance, Adam optimization, cosine annealing, geometric augmentation, gradient clipping, TensorBoard logging, checkpointing, and early stopping on validation mIoU. The class-weight computation is explicitly designed to prevent collapse toward dominant classes such as ground and building.
+Training uses weighted cross-entropy to address extreme class imbalance, Adam optimization, cosine annealing, geometric augmentation, gradient clipping, automatic mixed precision (AMP), TensorBoard logging, checkpointing, and early stopping on validation mIoU. The class-weight computation is explicitly designed to prevent collapse toward dominant classes such as ground and building.
 
 ### Inference
 
@@ -43,6 +43,8 @@ Inference is performed with sliding 4 m × 4 m windows using a 2 m stride over t
 ## Results
 
 All experiments use PointNet++ SSG with 972,714 parameters, 4096 points per block (unless noted), `block_size=4.0 m`, `seed=42`.
+
+> **Note on exp4:** starting from Exp 4, the feature vector uses a corrected z normalization (`z_norm = height / half` instead of raw Lambert-93 Z). Exp 1–3 results are not directly comparable to Exp 4 on KNN-based architectures.
 
 ### Best runs
 
@@ -129,16 +131,14 @@ The error-analysis tooling shows that failures concentrate around hard classes, 
 
 ## Limitations
 
-- The z coordinate is in absolute Lambert-93 space (~0–100 m), not normalized. KNN-based architectures (RandLA-Net, PointTransformer) may have biased neighborhoods due to elevation-dominated distances. This is a known issue that will be addressed before the architecture benchmark.
 - The 4 m block formulation is a likely bottleneck for context-dependent distinctions. Some classes may require more global context, while others may suffer from the majority-vote fusion or from instability in local normal estimation.
 - Architecture comparison (RandLA-Net, PointTransformer) is in progress as Exp 4.
 
 ## Next experiments
 
 1. Benchmark PointNet++ SSG, RandLA-Net, and PointTransformer under the same protocol (Exp 4 — in progress).
-2. Fix z normalization before the architecture benchmark to ensure fair KNN neighborhoods across models.
-3. Measure the effect of inference stride and multi-scale blocks on hard-class IoU and runtime.
-4. Add uncertainty maps to predict where the model is likely to fail and support error triage.
+2. Measure the effect of inference stride and multi-scale blocks on hard-class IoU and runtime.
+3. Add uncertainty maps to predict where the model is likely to fail and support error triage.
 
 ## Repository structure
 
