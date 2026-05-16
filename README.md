@@ -44,7 +44,7 @@ Inference is performed with sliding 4 m × 4 m windows using a 2 m stride over t
 
 All experiments use PointNet++ SSG with 972,714 parameters, 4096 points per block (unless noted), `block_size=4.0 m`, `seed=42`.
 
-> **Note on exp4:** starting from Exp 4, the feature vector uses a corrected z normalization (`z_norm = height / half` instead of raw Lambert-93 Z). Exp 1–3 results are not directly comparable to Exp 4 on KNN-based architectures.
+> **Note on exp4:** starting from Exp 4, feature channel 2 stores `z_norm = height / half` instead of raw Lambert-93 Z. PointNet++ uses channels [0, 1, 3] for geometry (unaffected), but all model weights expect the new channel 2 distribution, so exp 1–3 checkpoints are not reused. Exp 1–3 ablation results remain valid on their own terms.
 
 ### Best runs
 
