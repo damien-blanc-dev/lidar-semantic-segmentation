@@ -221,30 +221,42 @@ def train_one_epoch(
     device: torch.device,
     epoch: int,
     writer: SummaryWriter,
+    scaler: "torch.cuda.amp.GradScaler | None" = None,
 ) -> float:
-    """Run one training epoch. Returns mean loss."""
+    """Run one training epoch. Returns mean loss.
+
+    Pass a GradScaler (from Trainer) to enable automatic mixed precision (AMP).
+    AMP halves VRAM usage and speeds up training ~1.5-2× on Ampere+ GPUs.
+    """
     model.train()
     total_loss = 0.0
     n_batches = len(loader)
     t0 = time.time()
+    use_amp = scaler is not None
 
     for batch_idx, (features, labels) in enumerate(loader):
         features = features.to(device)               # (B, N, C)
         labels   = labels.to(device).long()          # (B, N)
 
         optimizer.zero_grad()
-        logits = model(features)                     # (B, N, num_classes)
 
-        # Reshape for cross-entropy: (B*N, num_classes) and (B*N,)
-        loss = criterion(
-            logits.reshape(-1, logits.shape[-1]),
-            labels.reshape(-1),
-        )
-        loss.backward()
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            logits = model(features)                 # (B, N, num_classes)
+            loss = criterion(
+                logits.reshape(-1, logits.shape[-1]),
+                labels.reshape(-1),
+            )
 
-        # Gradient clipping — prevents exploding gradients on sparse classes
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-        optimizer.step()
+        if use_amp:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+            optimizer.step()
 
         total_loss += loss.item()
 
@@ -269,6 +281,7 @@ def validate(
     epoch: int,
     writer: SummaryWriter,
     tracker: MetricTracker,
+    use_amp: bool = False,
 ) -> tuple[float, dict]:
     """Run validation. Returns (mean_loss, metrics_dict)."""
     model.eval()
@@ -279,11 +292,12 @@ def validate(
         features = features.to(device)
         labels   = labels.to(device).long()
 
-        logits = model(features)                     # (B, N, num_classes)
-        loss = criterion(
-            logits.reshape(-1, logits.shape[-1]),
-            labels.reshape(-1),
-        )
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            logits = model(features)                 # (B, N, num_classes)
+            loss = criterion(
+                logits.reshape(-1, logits.shape[-1]),
+                labels.reshape(-1),
+            )
         total_loss += loss.item()
 
         pred = logits.argmax(dim=-1)                 # (B, N)
@@ -374,6 +388,12 @@ class Trainer:
         self.patience = cfg.get("early_stopping_patience", 15)
         self.start_epoch = 1
 
+        # Automatic mixed precision — enabled on CUDA by default, no-op on CPU.
+        self.use_amp = (self.device.type == "cuda")
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        if self.use_amp:
+            logger.info("AMP enabled (autocast + GradScaler)")
+
     def load_checkpoint(self, path: str | Path) -> None:
         """Resume training from a saved checkpoint."""
         path = Path(path)
@@ -381,6 +401,8 @@ class Trainer:
         ckpt = torch.load(path, map_location=self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if "scaler_state_dict" in ckpt:
+            self.scaler.load_state_dict(ckpt["scaler_state_dict"])
         self.best_miou = ckpt.get("miou", 0.0)
         self.start_epoch = ckpt.get("epoch", 0) + 1
         # Fast-forward the LR scheduler to match the saved epoch
@@ -405,6 +427,7 @@ class Trainer:
             train_loss = train_one_epoch(
                 self.model, self.train_loader, self.optimizer,
                 self.criterion, self.device, epoch, self.writer,
+                scaler=self.scaler,
             )
 
             torch.cuda.empty_cache()
@@ -413,6 +436,7 @@ class Trainer:
             val_loss, metrics = validate(
                 self.model, self.val_loader, self.criterion,
                 self.device, epoch, self.writer, self.tracker,
+                use_amp=self.use_amp,
             )
 
             self.scheduler.step()
@@ -464,6 +488,7 @@ class Trainer:
                 "epoch": epoch,
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
+                "scaler_state_dict": self.scaler.state_dict(),
                 "miou": metrics["miou"],
                 "cfg": self.cfg,
             }, tmp_path)
