@@ -12,6 +12,7 @@ Usage:
     python scripts/inference.py --scan Paris --model randlanet \\
         --checkpoint outputs/checkpoints/exp4_randlanet/best.pth
     python scripts/inference.py --scan Paris --save_ply             # export colored PLY
+    python scripts/inference.py --scan Paris --save_las             # export labeled LAS (YellowScan workflow)
 """
 
 import argparse
@@ -50,6 +51,8 @@ def parse_args():
                    help="Architecture — auto-detected from checkpoint when possible")
     p.add_argument("--save_ply",    action="store_true",
                    help="Export a colored PLY file for CloudCompare")
+    p.add_argument("--save_las",    action="store_true",
+                   help="Export a LAS 1.4 file with predicted labels in the classification field")
     p.add_argument("--save_probs",  action="store_true",
                    help="Save per-point softmax probabilities to *_probs.npy (Exp 5)")
     p.add_argument("--experiment",  type=str, default=None,
@@ -147,14 +150,15 @@ def run_inference(
         block     = block_pts[chosen]
         orig_idx  = np.where(mask)[0][chosen]
 
-        # Feature engineering (mirrors PL3DDataset.__getitem__)
+        # Feature engineering — must mirror PL3DDataset.__getitem__ exactly.
         z_ground = np.percentile(block[:, 2], 5)
         height   = (block[:, 2] - z_ground).clip(min=0).astype(np.float32)
         x_norm   = ((block[:, 0] - cx) / half).astype(np.float32)
         y_norm   = ((block[:, 1] - cy) / half).astype(np.float32)
+        z_norm   = (height / half).astype(np.float32)  # channel 2: block-local z
 
         feat = np.stack([
-            x_norm, y_norm, block[:, 2],
+            x_norm, y_norm, z_norm,
             height, block[:, 3],
             block[:, 4], block[:, 5], block[:, 6],
         ], axis=1).astype(np.float32)
@@ -187,6 +191,35 @@ def run_inference(
 # ─────────────────────────────────────────────────────────────────────────────
 #  Export helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def export_labeled_las(
+    xyz: "np.ndarray",
+    pred_labels: "np.ndarray",
+    save_path: Path,
+) -> None:
+    """Export predictions as LAS 1.4 with labels in the classification field.
+
+    The classification field (uint8) stores the raw prediction index (0-9 for
+    Paris-Lille-3D). Downstream tools such as YellowScan Explorer, LAStools, or
+    CloudCompare can filter and color points by classification value.
+    """
+    try:
+        import laspy
+    except ImportError:
+        logger.error("laspy is required for LAS export: pip install laspy")
+        return
+
+    import numpy as np
+
+    header = laspy.LasHeader(point_format=0, version="1.4")
+    las = laspy.LasData(header=header)
+    las.x = xyz[:, 0].astype(np.float64)
+    las.y = xyz[:, 1].astype(np.float64)
+    las.z = xyz[:, 2].astype(np.float64)
+    las.classification = pred_labels.astype(np.uint8)
+    las.write(str(save_path))
+    logger.info(f"  Labeled LAS saved → {save_path}")
+
 
 def export_colored_ply(xyz: "np.ndarray", labels: "np.ndarray", save_path: Path) -> None:
     import numpy as np
@@ -338,6 +371,11 @@ def main():
     if args.save_ply:
         logger.info("Exporting colored PLY ...")
         export_colored_ply(xyz, pred_labels, FIGURE_DIR / f"{args.scan}_predictions.ply")
+
+    if args.save_las:
+        logger.info("Exporting labeled LAS ...")
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        export_labeled_las(xyz, pred_labels, pred_dir / f"{args.scan}_predictions.las")
 
     logger.info("Done.")
 
