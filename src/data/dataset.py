@@ -16,12 +16,17 @@ Block cropping logic (done here, not in preprocessing):
 Final feature vector per point — shape (num_points, 8):
   [0]   x_norm       — X normalized within block [-1, 1]
   [1]   y_norm       — Y normalized within block [-1, 1]
-  [2]   z            — raw Z (absolute height, Lambert-93)
-  [3]   height       — Z - Z_block_min  (relative height above local ground)
+  [2]   z_norm       — height above local ground / half_block_size (same scale as x/y)
+  [3]   height       — Z - Z_block_min  (relative height above local ground, in meters)
   [4]   reflectance  — laser intensity [0, 1]
   [5]   nx           — normal X
   [6]   ny           — normal Y
   [7]   nz           — normal Z
+
+Note on z_norm (channel 2): previously this stored the raw Lambert-93 Z coordinate
+(~50-100 m absolute), which dominated KNN distances in RandLA-Net and PointTransformer
+since x/y are in [-1,1] while z was in [0,100]. z_norm = height/half puts all three
+geometry dimensions on a comparable scale (0 = ground level, 1 = one half-block above).
 
 Analogy to CT: this is equivalent to extracting a random patch from a volume
 at each training step. The block size (4 m) is your receptive field equivalent.
@@ -177,9 +182,13 @@ class PL3DDataset(Dataset):
         # Normalize XY to block-local coordinates [-1, 1]
         x_norm = ((xyz[:, 0] - center_xy[0]) / half).astype(np.float32)
         y_norm = ((xyz[:, 1] - center_xy[1]) / half).astype(np.float32)
+        # z_norm: same unit as x/y (height-above-ground / half_block).
+        # Fixes KNN bias from mixing Lambert-93 absolute Z (~50-100 m) with
+        # block-local x/y ([-1,1]). ground=0, 1-story building≈1, 4-story≈4.
+        z_norm = (height / half).astype(np.float32)
 
         # Assemble final feature vector — (P, 8) with normals, (P, 5) without
-        channels = [x_norm, y_norm, xyz[:, 2], height, refl]
+        channels = [x_norm, y_norm, z_norm, height, refl]
         if self.use_normals:
             channels += [norms[:, 0], norms[:, 1], norms[:, 2]]
         features = np.stack(channels, axis=1).astype(np.float32)
