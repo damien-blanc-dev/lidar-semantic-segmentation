@@ -240,7 +240,7 @@ def train_one_epoch(
 
         optimizer.zero_grad()
 
-        with torch.cuda.amp.autocast(enabled=use_amp):
+        with torch.amp.autocast("cuda", enabled=use_amp):
             logits = model(features)                 # (B, N, num_classes)
             loss = criterion(
                 logits.reshape(-1, logits.shape[-1]),
@@ -292,7 +292,7 @@ def validate(
         features = features.to(device)
         labels   = labels.to(device).long()
 
-        with torch.cuda.amp.autocast(enabled=use_amp):
+        with torch.amp.autocast("cuda", enabled=use_amp):
             logits = model(features)                 # (B, N, num_classes)
             loss = criterion(
                 logits.reshape(-1, logits.shape[-1]),
