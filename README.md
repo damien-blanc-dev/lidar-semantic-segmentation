@@ -23,6 +23,16 @@ Experiments use the Paris-Lille-3D benchmark, with three scans for training (`Li
 
 A key difficulty is severe class imbalance. Ground and building dominate the dataset, while pedestrian represents only about 0.1 percent of points, making global accuracy alone a misleading metric.
 
+<p align="center">
+<img src="outputs/figures/topdown_labels.png" width="60%" alt="Top-down view of Lille1_1 training scan with ground truth semantic labels">
+</p>
+<p align="center"><em>Top-down view of the Lille1_1 training scan — ~3 million points after 5 cm voxel downsampling, annotated with 10 semantic classes.</em></p>
+
+<p align="center">
+<img src="outputs/figures/class_distribution.png" width="80%" alt="Class distribution showing severe imbalance">
+</p>
+<p align="center"><em>Class distribution in the raw scan. Ground covers 58% of points; bollard 0.003% — 18,000× rarer. A model predicting only "ground" would reach 58% accuracy yet be useless for any urban mapping task.</em></p>
+
 ## Method
 
 ### Preprocessing
@@ -36,6 +46,11 @@ The main baseline is a PointNet++ SSG encoder-decoder with set abstraction and f
 ### Training
 
 Training uses weighted cross-entropy to address extreme class imbalance, Adam optimization, cosine annealing, geometric augmentation, gradient clipping, automatic mixed precision (AMP), TensorBoard logging, checkpointing, and early stopping on validation mIoU. The class-weight computation is explicitly designed to prevent collapse toward dominant classes such as ground and building.
+
+<p align="center">
+<img src="outputs/figures/training_curves_exp4_pn2_wce_znorm.png" width="90%" alt="Training dynamics for exp4_pn2_wce_znorm">
+</p>
+<p align="center"><em>Training dynamics for exp4_pn2_wce_znorm. Dashed red lines mark checkpoint resumes after hardware interruptions (PSU crashes). Weighted cross-entropy maintains stable convergence throughout; best val mIoU reached 70.68%.</em></p>
 
 ### Inference
 
@@ -62,6 +77,12 @@ Trash can     : 24.73%
 Parameters    : 972,714
 ```
 
+| Ground truth — Paris (held-out) | Predictions — PointNet++ SSG |
+| :---: | :---: |
+| ![GT](outputs/figures/Paris_gt.png) | ![Pred](outputs/figures/Paris_pred.png) |
+
+*Sliding-window inference over the full Paris validation scan (15 M points). Each point accumulates votes from all overlapping 4 m × 4 m blocks; final label = majority vote.*
+
 ---
 
 ### Architecture benchmark (Exp 4)
@@ -74,6 +95,11 @@ Parameters    : 972,714
 | RandLA-Net | 66.04 | 94.68 | 1,595,786 | 43.8 h | 48.95 | 32.22 | 51.11 | 19.07 |
 
 PointNet++ SSG wins on all metrics while using 38% fewer parameters and training 1.8× faster. RandLA-Net's random sampling and local feature aggregation appear less suited to this imbalanced outdoor dataset at 4096 points per block than the global set-abstraction hierarchy of PointNet++.
+
+<p align="center">
+<img src="outputs/figures/architecture_comparison.png" width="90%" alt="Architecture comparison bar chart — PointNet++ SSG vs RandLA-Net">
+</p>
+<p align="center"><em>PointNet++ SSG (blue) vs RandLA-Net (orange) across mIoU and four rare-class IoUs. Same training protocol, same data. PointNet++ leads on every metric.</em></p>
 
 ---
 
@@ -162,6 +188,17 @@ These results show that average mIoU hides several distinct regimes: easy large 
 
 The repository includes a dedicated post-hoc analysis script that generates a recall-normalized confusion matrix, a top-down error map, the most frequent confusion pairs, and zoomed inspections of hard classes. This moves beyond a scoreboard mindset and turns the model into an analyzable system.
 
+<p align="center">
+<img src="outputs/figures/error_analysis/hard_classes.png" width="80%" alt="Zoomed GT vs prediction on pedestrian, bollard and pole-sign">
+</p>
+<p align="center"><em>20 m × 20 m zoom around the hardest classes (left: ground truth, right: predictions). Pedestrian clusters are largely recovered; bollard detection is partial in high-density areas; pole/sign benefits from spatial proximity to the scan trajectory.</em></p>
+
+| Confusion matrix (recall per class) | Top confusion pairs |
+| :---: | :---: |
+| ![Confusion matrix](outputs/figures/error_analysis/confusion_matrix.png) | ![Top confusion pairs](outputs/figures/error_analysis/confusion_pairs.png) |
+
+*Left: recall-normalized confusion matrix — diagonal shows per-class recall; off-diagonal reveals systematic confusions. Right: the 10 most frequent misclassification pairs by point count. Building↔vegetation dominates, driven by boundary ambiguity between façades and overhanging trees.*
+
 The error-analysis tooling shows that failures concentrate around hard classes, class boundaries, and rare object regions rather than being uniformly distributed in space.
 
 ## Limitations
@@ -186,6 +223,8 @@ The error-analysis tooling shows that failures concentrate around hard classes, 
 - `src/fusion/projection.py` — camera-LiDAR geometry utilities (projection, colorization, calibration sensitivity).
 - `scripts/colorize_pointcloud.py` — CLI for point cloud colorization from RGB image.
 - `scripts/eval_projection.py` — CLI for calibration sensitivity analysis.
+- `scripts/plot_training_curves.py` — training dynamics visualization from TensorBoard logs (loss + mIoU, restart annotations).
+- `scripts/plot_architecture_comparison.py` — grouped bar chart comparing architectures from `outputs/results.csv`.
 
 ## Takeaway
 
