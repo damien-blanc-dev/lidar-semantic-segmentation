@@ -201,6 +201,26 @@ The repository includes a dedicated post-hoc analysis script that generates a re
 
 The error-analysis tooling shows that failures concentrate around hard classes, class boundaries, and rare object regions rather than being uniformly distributed in space.
 
+## Exp 5 — Predictive uncertainty
+
+Inference stores per-point averaged softmax probabilities across overlapping windows (`--save_probs`). Predictive entropy `H(x) = -∑ p_c log p_c`, normalized to [0, 1], measures how much the model disagrees with itself on each point.
+
+<p align="center">
+<img src="outputs/figures/uncertainty/uncertainty_map.png" width="95%" alt="Spatial uncertainty map — Paris scan">
+</p>
+<p align="center"><em>Left: entropy map of the Paris validation scan. Right: high-entropy points (top 20%, red) overlaid on the scene. Uncertainty concentrates at building-vegetation boundaries, scan edges, and rare object locations — not randomly distributed.</em></p>
+
+| Entropy per GT class | Correct vs incorrect predictions |
+| :---: | :---: |
+| ![Per-class entropy](outputs/figures/uncertainty/per_class_entropy.png) | ![Entropy vs error](outputs/figures/uncertainty/entropy_vs_error.png) |
+
+*Left: violin plot of entropy per GT class, sorted by mean. Ground and car are very certain (low entropy); bollard and trash can are intrinsically ambiguous. Right: the model is well-calibrated — misclassified points have systematically higher entropy than correct predictions. The mean entropy gap between the two groups is visible in both tails.*
+
+<p align="center">
+<img src="outputs/figures/uncertainty/coverage_accuracy.png" width="80%" alt="Coverage vs accuracy tradeoff">
+</p>
+<p align="center"><em>Coverage/accuracy tradeoff using entropy-based abstention. Retaining the 80% most certain points raises OA from 96.8% to 99.7% (+2.9 pp) and mIoU from 71.7% to 89.9% (+18.2 pp). Flagging the remaining 20% for human review dramatically reduces the labeling burden in a mobile-mapping workflow without discarding most of the scene.</em></p>
+
 ## Limitations
 
 - The 4 m block formulation is a likely bottleneck for context-dependent distinctions. Some classes may require more global context, while others may suffer from the majority-vote fusion or from instability in local normal estimation.
@@ -209,8 +229,7 @@ The error-analysis tooling shows that failures concentrate around hard classes, 
 ## Next experiments
 
 1. Measure the effect of inference stride and multi-scale blocks on hard-class IoU and runtime.
-2. Add uncertainty maps to predict where the model is likely to fail and support error triage.
-3. Benchmark PointTransformer with `torch_cluster.fps` for a fair three-way architecture comparison.
+2. Benchmark PointTransformer with `torch_cluster.fps` for a fair three-way architecture comparison.
 
 ## Repository structure
 
@@ -225,7 +244,8 @@ The error-analysis tooling shows that failures concentrate around hard classes, 
 - `scripts/eval_projection.py` — CLI for calibration sensitivity analysis.
 - `scripts/plot_training_curves.py` — training dynamics visualization from TensorBoard logs (loss + mIoU, restart annotations).
 - `scripts/plot_architecture_comparison.py` — grouped bar chart comparing architectures from `outputs/results.csv`.
+- `scripts/uncertainty_analysis.py` — Exp 5: entropy maps, per-class uncertainty, and coverage/accuracy tradeoff from saved softmax probabilities.
 
 ## Takeaway
 
-This project is best presented as a 3D representation-learning study on irregular geometry, not only as a segmentation benchmark. Its main strength is the combination of engineering completeness and hypothesis-driven analysis around normals, class imbalance, loss sensitivity, architecture comparison, and hard spatial failure modes.
+This project is best presented as a 3D representation-learning study on irregular geometry, not only as a segmentation benchmark. Its main strength is the combination of engineering completeness and hypothesis-driven analysis around normals, class imbalance, loss sensitivity, architecture comparison, spatial failure modes, and predictive uncertainty — turning the model into an analyzable, production-oriented system rather than a pure benchmark entry.
