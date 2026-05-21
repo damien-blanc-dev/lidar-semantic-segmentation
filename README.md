@@ -221,15 +221,11 @@ Inference stores per-point averaged softmax probabilities across overlapping win
 </p>
 <p align="center"><em>Coverage/accuracy tradeoff using entropy-based abstention. Retaining the 80% most certain points raises OA from 96.8% to 99.7% (+2.9 pp) and mIoU from 71.7% to 89.9% (+18.2 pp). Flagging the remaining 20% for human review dramatically reduces the labeling burden in a mobile-mapping workflow without discarding most of the scene.</em></p>
 
-## Limitations
+## Limitations & open questions
 
-- The 4 m block formulation is a likely bottleneck for context-dependent distinctions. Some classes may require more global context, while others may suffer from the majority-vote fusion or from instability in local normal estimation.
-- PointTransformer was not benchmarked in Exp 4 due to the iterative FPS implementation being unrepresentative of production performance (a CUDA-native kernel such as `torch_cluster.fps` would be required for a fair comparison).
-
-## Next experiments
-
-1. Measure the effect of inference stride and multi-scale blocks on hard-class IoU and runtime.
-2. Benchmark PointTransformer with `torch_cluster.fps` for a fair three-way architecture comparison.
+- The 4 m block formulation is a likely bottleneck for context-dependent distinctions. Some classes may benefit from larger blocks (more global context) while others suffer from majority-vote fusion across overlapping windows. A multi-scale inference strategy could partially close the gap on trash can and bollard.
+- ~40% of labeled points receive no sliding-window vote (points at scan boundaries or in sparse regions). These are assigned `pred=0` and excluded from the scored set. A denser stride (1 m vs 2 m) would increase coverage at the cost of ~4× longer inference.
+- PointTransformer was not benchmarked due to the iterative FPS kernel being unrepresentative of its true throughput. A fair three-way comparison requires `torch_cluster.fps` (CUDA-native FPS, ~10× faster).
 
 ## Repository structure
 
@@ -245,6 +241,28 @@ Inference stores per-point averaged softmax probabilities across overlapping win
 - `scripts/plot_training_curves.py` — training dynamics visualization from TensorBoard logs (loss + mIoU, restart annotations).
 - `scripts/plot_architecture_comparison.py` — grouped bar chart comparing architectures from `outputs/results.csv`.
 - `scripts/uncertainty_analysis.py` — Exp 5: entropy maps, per-class uncertainty, and coverage/accuracy tradeoff from saved softmax probabilities.
+
+## Usage
+
+End-to-end pipeline from a raw annotated PLY scan to a labeled LAS file.
+
+```bash
+# Step 1 — preprocess raw PLY scan (voxel downsample, normals, feature assembly)
+python preprocess.py --scan MyScan
+
+# Step 2 — inference: saves predictions, averaged softmax probs, and labeled LAS
+python scripts/inference.py --scan MyScan \
+    --checkpoint outputs/checkpoints/exp4_pn2_wce_znorm/best.pth \
+    --save_probs --save_las
+
+# Step 3 — uncertainty QA: flag the 20% most uncertain points for human review
+python scripts/uncertainty_analysis.py --scan MyScan
+```
+
+### Outputs
+
+- `outputs/predictions/MyScan_predictions.las` — LAS 1.4 with predicted class indices in the `classification` field (0–9). Compatible with CloudCompare, LAStools, and YellowScan Explorer.
+- `outputs/figures/uncertainty/coverage_accuracy.png` — shows the OA / mIoU gain from rejecting uncertain predictions. At 80% coverage, OA rises to 99.7% and mIoU to 89.9%.
 
 ## Takeaway
 
