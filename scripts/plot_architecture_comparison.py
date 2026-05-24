@@ -56,7 +56,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--experiments", nargs="+",
-        default=["exp4_pn2_wce_znorm", "exp4_randlanet_wce_znorm"],
+        default=["exp4_pn2_wce_znorm", "exp4_randlanet_wce_znorm", "exp4_pt_wce_znorm"],
         help="Experiment names to compare (must match the 'experiment' column in results.csv)",
     )
     p.add_argument("--out", type=str, default="architecture_comparison.png")
