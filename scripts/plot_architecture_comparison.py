@@ -33,7 +33,7 @@ METRICS = [
 ARCH_COLORS = {
     "pointnet2": "#4c9be8",
     "randlanet":  "#f78166",
-    "point_transformer": "#d2a8ff",
+    "point_transformer": "#3fb950",
 }
 ARCH_LABELS = {
     "pointnet2":          "PointNet++ SSG",
