@@ -48,9 +48,9 @@ The main baseline is a PointNet++ SSG encoder-decoder with set abstraction and f
 Training uses weighted cross-entropy to address extreme class imbalance, Adam optimization, cosine annealing, geometric augmentation, gradient clipping, automatic mixed precision (AMP), TensorBoard logging, checkpointing, and early stopping on validation mIoU. The class-weight computation is explicitly designed to prevent collapse toward dominant classes such as ground and building.
 
 <p align="center">
-<img src="outputs/figures/training_curves_exp4_pn2_wce_znorm.png" width="90%" alt="Training dynamics for exp4_pn2_wce_znorm">
+<img src="outputs/figures/training_curves_exp4_pt_wce_znorm.png" width="90%" alt="Training dynamics for exp4_pt_wce_znorm">
 </p>
-<p align="center"><em>Training dynamics for exp4_pn2_wce_znorm. Dashed red lines mark checkpoint resumes after hardware interruptions (PSU crashes). Weighted cross-entropy maintains stable convergence throughout; best val mIoU reached 70.68%.</em></p>
+<p align="center"><em>Training dynamics for exp4_pt_wce_znorm (PointTransformer). Dashed red lines mark checkpoint resumes after hardware interruptions. Weighted cross-entropy maintains stable convergence throughout; best val mIoU reached 73.37%.</em></p>
 
 ### Inference
 
