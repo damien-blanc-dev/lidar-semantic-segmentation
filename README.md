@@ -77,7 +77,7 @@ Trash can     : 18.83%
 Parameters    : 3,071,818
 ```
 
-| Ground truth — Paris (held-out) | Predictions — PointNet++ SSG |
+| Ground truth — Paris (held-out) | Predictions — PointTransformer |
 | :---: | :---: |
 | ![GT](outputs/figures/Paris_gt.png) | ![Pred](outputs/figures/Paris_pred.png) |
 
@@ -221,7 +221,7 @@ Inference stores per-point averaged softmax probabilities across overlapping win
 <p align="center">
 <img src="outputs/figures/uncertainty/coverage_accuracy.png" width="80%" alt="Coverage vs accuracy tradeoff">
 </p>
-<p align="center"><em>Coverage/accuracy tradeoff using entropy-based abstention. Retaining the 80% most certain points raises OA from 96.8% to 99.7% (+2.9 pp) and mIoU from 71.7% to 89.9% (+18.2 pp). Flagging the remaining 20% for human review dramatically reduces the labeling burden in a mobile-mapping workflow without discarding most of the scene.</em></p>
+<p align="center"><em>Coverage/accuracy tradeoff using entropy-based abstention. Retaining the 80% most certain points raises OA from 97.1% to 99.8% (+2.7 pp) and mIoU from 74.1% to 89.2% (+15.1 pp). Flagging the remaining 20% for human review dramatically reduces the labeling burden in a mobile-mapping workflow without discarding most of the scene.</em></p>
 
 ## Limitations & open questions
 
@@ -254,7 +254,8 @@ python preprocess.py --scan MyScan
 
 # Step 2 — inference: saves predictions, averaged softmax probs, and labeled LAS
 python scripts/inference.py --scan MyScan \
-    --checkpoint outputs/checkpoints/exp4_pn2_wce_znorm/best.pth \
+    --model point_transformer \
+    --checkpoint outputs/checkpoints/exp4_pt_wce_znorm/best.pth \
     --save_probs --save_las
 
 # Step 3 — uncertainty QA: flag the 20% most uncertain points for human review
@@ -264,7 +265,7 @@ python scripts/uncertainty_analysis.py --scan MyScan
 ### Outputs
 
 - `outputs/predictions/MyScan_predictions.las` — LAS 1.4 with predicted class indices in the `classification` field (0–9). Compatible with CloudCompare, LAStools, and YellowScan Explorer.
-- `outputs/figures/uncertainty/coverage_accuracy.png` — shows the OA / mIoU gain from rejecting uncertain predictions. At 80% coverage, OA rises to 99.7% and mIoU to 89.9%.
+- `outputs/figures/uncertainty/coverage_accuracy.png` — shows the OA / mIoU gain from rejecting uncertain predictions. At 80% coverage, OA rises to 99.8% and mIoU to 89.2%.
 
 ## Takeaway
 
