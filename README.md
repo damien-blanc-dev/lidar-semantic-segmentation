@@ -67,14 +67,14 @@ All experiments use 4096 points per block (unless noted), `block_size=4.0 m`, `s
 ### Overall best
 
 ```text
-Architecture  : PointNet++ SSG (exp4_pn2_wce_znorm)
-mIoU          : 70.68%   (+1.17 over previous best)
-OA            : 96.53%
-Pedestrian    : 59.19%
-Bollard       : 35.92%
-Pole/sign     : 62.61%
-Trash can     : 24.73%
-Parameters    : 972,714
+Architecture  : PointTransformer (exp4_pt_wce_znorm)
+mIoU          : 73.37%   (+2.69 over PointNet++ SSG)
+OA            : 96.89%
+Pedestrian    : 57.10%
+Bollard       : 47.43%
+Pole/sign     : 72.98%
+Trash can     : 18.83%
+Parameters    : 3,071,818
 ```
 
 | Ground truth — Paris (held-out) | Predictions — PointNet++ SSG |
@@ -91,15 +91,16 @@ Parameters    : 972,714
 
 | Architecture | mIoU | OA | Params | Train time | Pedestrian | Bollard | Pole/sign | Trash can |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **PointNet++ SSG** | **70.68** | **96.53** | **972,714** | **24.7 h** | **59.19** | **35.92** | **62.61** | **24.73** |
+| **PointTransformer** | **73.37** | **96.89** | 3,071,818 | 22.4 h | 57.10 | **47.43** | **72.98** | 18.83 |
+| PointNet++ SSG | 70.68 | 96.53 | **972,714** | 24.7 h | **59.19** | 35.92 | 62.61 | **24.73** |
 | RandLA-Net | 66.04 | 94.68 | 1,595,786 | 43.8 h | 48.95 | 32.22 | 51.11 | 19.07 |
 
-PointNet++ SSG wins on all metrics while using 38% fewer parameters and training 1.8× faster. RandLA-Net's random sampling and local feature aggregation appear less suited to this imbalanced outdoor dataset at 4096 points per block than the global set-abstraction hierarchy of PointNet++.
+PointTransformer leads overall (+2.7 pp mIoU over PointNet++) with notable gains on bollard (+11.5 pp) and pole/sign (+10.4 pp) — classes that benefit from local vector self-attention on sparse geometric structures. PointNet++ retains an edge on pedestrian (+2.1 pp) and trash can (+5.9 pp), where compact rare-object detection favours the global set-abstraction hierarchy. RandLA-Net trails on all metrics despite the largest parameter count, confirming that random sampling is poorly suited to this severely imbalanced dataset.
 
 <p align="center">
-<img src="outputs/figures/architecture_comparison.png" width="90%" alt="Architecture comparison bar chart — PointNet++ SSG vs RandLA-Net">
+<img src="outputs/figures/architecture_comparison.png" width="90%" alt="Architecture comparison bar chart — PointTransformer vs PointNet++ SSG vs RandLA-Net">
 </p>
-<p align="center"><em>PointNet++ SSG (blue) vs RandLA-Net (orange) across mIoU and four rare-class IoUs. Same training protocol, same data. PointNet++ leads on every metric.</em></p>
+<p align="center"><em>Three-way architecture comparison under identical training protocol. PointTransformer (green) leads on mIoU and thin-structure classes; PointNet++ (blue) holds on compact rare objects; RandLA-Net (orange) trails throughout.</em></p>
 
 ---
 
@@ -118,8 +119,9 @@ PointNet++ SSG wins on all metrics while using 38% fewer parameters and training
 | exp2_cb_focal | PointNet++ | cb_focal | 0.3 | 2.49 | 0.69 | 7.75 | 14.01 | 0.54 | 0.09 |
 | exp2_cb_focal_v2 | PointNet++ | cb_focal | 0.3 | 57.07 | 89.11 | 41.44 | 37.53 | 35.91 | 7.45 |
 | exp3_b2_n2048 | PointNet++ | weighted_ce | 0.3 | 67.09 | 94.79 | 54.34 | 35.03 | **66.68** | 9.94 |
-| **exp4_pn2_wce_znorm** | **PointNet++** | **weighted_ce** | **0.3** | **70.68** | **96.53** | **59.19** | 35.92 | 62.61 | 24.73 |
+| exp4_pn2_wce_znorm | PointNet++ | weighted_ce | 0.3 | 70.68 | 96.53 | 59.19 | 35.92 | 62.61 | 24.73 |
 | exp4_randlanet_wce_znorm | RandLA-Net | weighted_ce | 0.3 | 66.04 | 94.68 | 48.95 | 32.22 | 51.11 | 19.07 |
+| **exp4_pt_wce_znorm** | **PointTransformer** | **weighted_ce** | **0.3** | **73.37** | **96.89** | 57.10 | **47.43** | **72.98** | 18.83 |
 
 ---
 
@@ -162,7 +164,7 @@ Halving block size and point count reduces global mIoU by only 2.4%, but dramati
 
 ### Interpretation
 
-- **PointNet++ SSG is the best architecture for this setup.** It outperforms RandLA-Net by +4.64% mIoU with fewer parameters and shorter training. The global hierarchical abstraction of PointNet++ handles the severe class imbalance better than RandLA-Net's random sampling.
+- **PointTransformer is the best architecture for this setup.** Local vector self-attention consistently outperforms set-abstraction (PointNet++) and random sampling (RandLA-Net), especially on thin and sparse structures (bollard +11.5 pp, pole/sign +10.4 pp over PointNet++). PointNet++ retains an edge on compact rare objects (pedestrian, trash can) where global hierarchical context matters more than local attention.
 - **`weighted_ce` is the most reliable loss.** Focal loss variants failed or underperformed significantly, even after hyperparameter tuning. The imbalance here is too severe for focal loss without careful gamma and alpha tuning.
 - **Normal radius r=0.2–0.3 m is the optimal range.** Too small is noisy; too large is oversmoothed. The sweet spot depends on the target class: r=0.2 best serves small objects, r=0.3 gives better global OA.
 - **Block geometry is a trade-off, not a free parameter.** Smaller blocks help thin structures (pole/sign) at the cost of compact rare objects (trash can). This suggests that multi-scale inference or class-specific block strategies could further close the gap.
@@ -177,10 +179,10 @@ Halving block size and point count reduces global mIoU by only 2.4%, but dramati
 | Vegetation | 87.6 | exp2_weighted_ce | Distinctive local geometry |
 | Car | 94.5 | exp2_weighted_ce | Compact regular object |
 | Barrier | 56.0 | exp2_weighted_ce | Boundary confusion with ground |
-| Pedestrian | **59.19** | exp4_pn2_wce_znorm | Rare and small; z_norm fix improved KNN quality |
-| Bollard | **41.96** | exp1_r020 | Extremely scarce; tighter normal radius critical |
-| Pole-sign | **66.68** | exp3_b2_n2048 | Thin structures; benefits from smaller blocks |
-| Trash can | **28.12** | exp1_r020 | Rarest and hardest class |
+| Pedestrian | **59.19** | exp4_pn2_wce_znorm | Rare and small; global hierarchy of PointNet++ edges out attention |
+| Bollard | **47.43** | exp4_pt_wce_znorm | Extremely scarce; local vector attention recovers +11.5 pp over PointNet++ |
+| Pole-sign | **72.98** | exp4_pt_wce_znorm | Thin structures; attention on sparse geometry outperforms all other methods |
+| Trash can | **24.73** | exp4_pn2_wce_znorm | Rarest and hardest class; compact shape favours global abstraction |
 
 These results show that average mIoU hides several distinct regimes: easy large planar classes, medium-sized regular objects, and rare thin or compact classes where local representation quality matters far more than raw capacity.
 
@@ -225,7 +227,7 @@ Inference stores per-point averaged softmax probabilities across overlapping win
 
 - The 4 m block formulation is a likely bottleneck for context-dependent distinctions. Some classes may benefit from larger blocks (more global context) while others suffer from majority-vote fusion across overlapping windows. A multi-scale inference strategy could partially close the gap on trash can and bollard.
 - ~40% of labeled points receive no sliding-window vote (points at scan boundaries or in sparse regions). These are assigned `pred=0` and excluded from the scored set. A denser stride (1 m vs 2 m) would increase coverage at the cost of ~4× longer inference.
-- PointTransformer was not benchmarked due to the iterative FPS kernel being unrepresentative of its true throughput. A fair three-way comparison requires `torch_cluster.fps` (CUDA-native FPS, ~10× faster).
+- PointTransformer training used `torch_cluster.fps` (CUDA-native FPS) for a fair comparison. The iterative fallback implementation would have been ~10× slower and unrepresentative of production throughput.
 
 ## Repository structure
 

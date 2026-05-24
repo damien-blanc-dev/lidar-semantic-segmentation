@@ -125,48 +125,20 @@ class PointTransformerLayer(nn.Module):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _farthest_point_sample(xyz: torch.Tensor, n_out: int) -> torch.Tensor:
-    """Iterative FPS — returns (B, n_out) indices.
+    """FPS via torch_cluster.fps — CUDA-native kernel, ~10× faster than iterative.
 
-    When the full pairwise distance matrix fits in memory (<= 512 MB), it is
-    precomputed once via a single bmm call and each iteration becomes a cheap
-    index gather instead of a full distance recomputation.  This trades one
-    O(B*N²) kernel launch for n_out O(B*N) launches, which is faster on GPU
-    because it dramatically reduces kernel-launch overhead (n_out can be 1024).
-
-    For large batches where the matrix would exceed 512 MB, falls back to the
-    per-iteration distance computation (original behaviour).
-
-    For production workloads, install torch-cluster and replace this with
-    torch_cluster.fps — it uses a CUDA-native kernel and is ~10× faster.
+    Returns (B, n_out) local indices into xyz.
     """
+    from torch_cluster import fps as tc_fps
+
     B, N, _ = xyz.shape
-    device = xyz.device
-    batch_idx = torch.arange(B, device=device)
+    xyz_flat  = xyz.reshape(B * N, 3)
+    batch_vec = torch.arange(B, device=xyz.device).repeat_interleave(N)
+    ratio     = n_out / N
 
-    sel  = torch.zeros(B, n_out, dtype=torch.long, device=device)
-    dist = torch.full((B, N), float("inf"), device=device)
-    cur  = torch.randint(0, N, (B,), device=device)
-
-    # Precompute pairwise squared distances when memory allows.
-    # ||a-b||² = ||a||² + ||b||² - 2·aᵀb  (no sqrt needed for argmax).
-    _MEM_LIMIT = 512 * 1024 * 1024  # 512 MB
-    dist_all = None
-    if B * N * N * 4 <= _MEM_LIMIT:
-        xyz2 = (xyz * xyz).sum(dim=-1)                               # (B, N)
-        dist_all = (xyz2.unsqueeze(2) + xyz2.unsqueeze(1)
-                    - 2.0 * torch.bmm(xyz, xyz.transpose(1, 2)))     # (B, N, N)
-        dist_all.clamp_(min=0.0)
-
-    for i in range(n_out):
-        sel[:, i] = cur
-        if dist_all is not None:
-            torch.minimum(dist, dist_all[batch_idx, cur], out=dist)
-        else:
-            cur_xyz = xyz[batch_idx, cur].unsqueeze(1)               # (B, 1, 3)
-            torch.minimum(dist, ((xyz - cur_xyz) ** 2).sum(-1), out=dist)
-        cur = dist.argmax(dim=1)
-
-    return sel
+    sel_global = tc_fps(xyz_flat, batch_vec, ratio=ratio, random_start=True)
+    offsets    = torch.arange(B, device=xyz.device).repeat_interleave(n_out) * N
+    return (sel_global - offsets).reshape(B, n_out)
 
 
 class TransitionDown(nn.Module):
