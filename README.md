@@ -2,6 +2,10 @@
 
 Semantic segmentation of outdoor urban LiDAR point clouds on Paris-Lille-3D, with a focus on geometric feature ablations, class imbalance, and spatial error analysis.
 
+<p align="center">
+<img src="outputs/figures/preview.gif" width="80%" alt="Rotating 3D view of semantic predictions on the Paris validation scan">
+</p>
+
 ## Project framing
 
 This project studies how a deep model learns semantic structure from irregular 3D point clouds, where geometry is sparse, unordered, and highly imbalanced across classes. Rather than treating the task as a pure benchmark exercise, the goal is to understand which signals actually drive performance on difficult classes such as pedestrians, bollards, trash cans, and pole-signs.
